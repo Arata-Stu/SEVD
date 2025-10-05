@@ -6,6 +6,8 @@ import shutil
 import os
 import concurrent.futures
 from datetime import datetime
+import time
+from tqdm import tqdm
 
 try:
     sys.path.append(glob.glob('./carla-*%d.%d-%s.egg' % (
@@ -28,9 +30,7 @@ from configuration import attachSensorsToVehicle, SimulationParams, setupTraffic
 import save_sensors
 import random
 import json
-import time
 import queue
-import os
 from os import path
 from ego_vehicle import EgoVehicle
 from fixed_perception import FixedPerception
@@ -215,12 +215,12 @@ def main():
         )
         return weather
 
-    start_weather = SimulationParams.start_weather
-    end_weather = SimulationParams.end_weather
+    start_weather_name = SimulationParams.start_weather
+    end_weather_name = SimulationParams.end_weather
     duration = SimulationParams.duration
     metadata = {
-        "start_weather": start_weather,
-        "end_weather": end_weather,
+        "start_weather": start_weather_name,
+        "end_weather": end_weather_name,
         "duration": duration,
         "map_name": map_name,
         "participant_density": participant_density,
@@ -229,39 +229,35 @@ def main():
         "fixed-views": len(fixed)
     }
 
+    start_weather = None
+    end_weather = None
     for name, value in weather_presets:
-        if name == start_weather:
+        if name == start_weather_name:
             start_weather = value
-            break
-
-    for name, value in weather_presets:
-        if name == end_weather:
+        if name == end_weather_name:
             end_weather = value
-            break
+
+    if start_weather is None or end_weather is None:
+        raise ValueError("Invalid weather preset name provided.")
 
     world.set_weather(start_weather)
-
-    step = 0
-    k = 0
 
     json_string = json.dumps(metadata, indent=4)
     file_path = f'{SimulationParams.data_output_subfolder}/metadata-{datetime.now().strftime("%Y%m%d%H%M%S")}.json'
     with open(file_path, "w") as file:
         file.write(json_string)
+
     try:
         with CarlaSyncMode(world, []) as sync_mode:
-            while True:
+            # 1. 無視するフレームの処理
+            print("Ignoring initial frames...")
+            for _ in range(SimulationParams.ignore_first_n_ticks):
+                sync_mode.tick(timeout=5.0)
+
+            # 2. データ収集のメインループ
+            print("Starting data collection...")
+            for step in tqdm(range(1, duration + 1), desc="Data Collection"):
                 frame_id = sync_mode.tick(timeout=5.0)
-                if (k < SimulationParams.ignore_first_n_ticks):
-                    k = k + 1
-                    print("Ignore Count: ", k)
-                    continue
-
-                if step > duration:
-                    break
-
-                print("Frame: ", step)
-                step = step + 1
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     futures = [executor.submit(
@@ -278,20 +274,21 @@ def main():
                     start_weather, end_weather, progress)
                 world.set_weather(current_weather)
     finally:
-        # stop pedestrians (list is [controller, actor, controller, actor ...])
+        print("\nSimulation finished.")
+        # stop pedestrians
         for i in range(0, len(w_all_actors)):
             try:
                 w_all_actors[i].stop()
             except:
                 pass
-        # destroy pedestrian (actor and controller)
+        # destroy actors
         client.apply_batch([carla.command.DestroyActor(x) for x in w_all_id])
         client.apply_batch([carla.command.DestroyActor(x) for x in v_all_id])
 
         for ego in egos:
             ego.destroy()
 
-        # This is to prevent Unreal from crashing from waiting the client.
+        # prevent Unreal from crashing
         settings = world.get_settings()
         settings.synchronous_mode = False
         world.apply_settings(settings)
@@ -299,7 +296,9 @@ def main():
 
 if __name__ == '__main__':
     try:
-        # assert len(sys.argv) > 1, "no path for destination folder given.."
         main()
     except KeyboardInterrupt:
-        pass
+        print("\nScript interrupted by user. Cleaning up...")
+    except Exception as e:
+        print(f"\nAn error occurred: {e}")
+        traceback.print_exc()
