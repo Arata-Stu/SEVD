@@ -245,7 +245,7 @@ def main():
     k = 0
 
     json_string = json.dumps(metadata, indent=4)
-    file_path = f'./out/metadata-{datetime.now().strftime("%Y%m%d%H%M%S")}.json'
+    file_path = f'{SimulationParams.data_output_subfolder}/metadata-{datetime.now().strftime("%Y%m%d%H%M%S")}.json'
     with open(file_path, "w") as file:
         file.write(json_string)
     try:
