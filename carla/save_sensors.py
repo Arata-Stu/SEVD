@@ -211,76 +211,73 @@ edges = [[0, 1], [1, 3], [3, 2], [2, 0], [0, 4], [4, 5],
 
 
 def saveAllSensors(out_root_folder, sensor_datas, sensor_types, world):
-    """
-    全てのセンサーデータを取得し、種類に応じて適切な保存関数を呼び出すメイン関数。
-    """
-    # 最初のデータ（通常はフレーム0の不完全なデータ）を破棄
     sensor_datas.pop(0)
 
-    # RGBカメラが対応するDepthデータを参照できるよう、先に全Depthデータを辞書に格納
-    depth_camera_data = {}
-    for i in range(len(sensor_datas)):
-        sensor_data, _, _ = sensor_datas[i]
-        sensor_name = sensor_types[i]
-        if 'depth_camera' in sensor_name:
-            # フレーム番号をキーとしてDepthデータを保存
-            depth_camera_data[sensor_data.frame] = sensor_data
-
-    # 並列処理で各センサーの保存を実行
+    dvs_camera = {}
+    rgb_camera = {}
+    depth_camera = {}
+    futures = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = []
         for i in range(len(sensor_datas)):
             try:
-                (sensor_data, sensor) = sensor_datas[i][:2]
-            except Exception as error:
-                print("An exception occurred while unpacking sensor_datas:", error)
-                continue
-            
+                (sensor_data, sensor, vehicle) = sensor_datas[i]
+            except:
+                try:
+                    (sensor_data, sensor) = sensor_datas[i]
+                    vehicle = None
+                except Exception as error:
+                    print("An exception occurred in saveAllSensors:", error)
+                    traceback.print_exc()
             sensor_name = sensor_types[i]
-            
-            # --- 各センサーの処理を振り分け ---
-            
-            if 'dvs' in sensor_name:
-                dvs_file_path = os.path.join(out_root_folder, sensor_name)
-                # DVS保存用の関数を呼び出し
-                future = executor.submit(saveDvsImage, sensor_data, dvs_file_path, world, sensor)
-                futures.append(future)
 
-            elif 'rgb_camera' in sensor_name:
-                # フレーム番号を基に対応するDepthデータを辞書から検索
-                corresponding_depth = depth_camera_data.get(sensor_data.frame)
-                if corresponding_depth:
-                    rgb_file_path = os.path.join(out_root_folder, sensor_name)
-                    # RGB保存用の関数を呼び出し
+            if (sensor_name.find('dvs') != -1):
+                dvs_camera[sensor_name] = sensor_data
+
+            if (sensor_name.find('optical_flow') != -1):
+                optical_camera_callback(
+                    sensor_data, os.path.join(out_root_folder, sensor_name))
+
+            if (sensor_name.find('instance_segmentation_camera') != -1):
+                saveISImage(sensor_data, os.path.join(
+                    out_root_folder, sensor_name))
+                pass
+
+            if (sensor_name.find('semantic_segmentation_camera') != -1):
+                saveSegImage(sensor_data, os.path.join(
+                    out_root_folder, sensor_name))
+
+            if (sensor_name.find('depth_camera') != -1):
+                depth_camera[sensor_name] = sensor_data
+                saveDepthImage(sensor_data, os.path.join(
+                    out_root_folder, sensor_name))
+
+            if (sensor_name.find('rgb_camera') != -1):
+                try:
+                    rgb_camera[sensor_name] = (
+                        sensor_data[i], os.path.join(out_root_folder, sensor_name))
+                    dvs = sensor_name.replace("rgb", "dvs")
+                    depth = sensor_name.replace("rgb", "depth")
+                    rgb_file_path = os.path.join(
+                        out_root_folder, sensor_name)
                     future = executor.submit(saveRgbImage, sensor_data, rgb_file_path,
-                                             world, sensor, corresponding_depth)
+                                             world, sensor, vehicle, dvs_camera[dvs], depth_camera[depth])
                     futures.append(future)
-                else:
-                    # 対応するDepthデータが見つからない場合は警告を表示
-                    print(f"Warning: Depth camera data for frame {sensor_data.frame} not found for {sensor_name}")
+                except Exception as error:
+                    print("An exception occurred in rgb_camera sensor find:", error)
+                    traceback.print_exc()
 
-            elif 'depth_camera' in sensor_name:
-                # Depth画像の保存（PNG形式など）
-                saveDepthImage(sensor_data, os.path.join(out_root_folder, sensor_name))
+            if (sensor_name.find('imu') != -1):
+                saveImu(sensor_data, os.path.join(
+                    out_root_folder, sensor_name), sensor_name)
 
-            elif 'optical_flow' in sensor_name:
-                optical_camera_callback(sensor_data, os.path.join(out_root_folder, sensor_name))
+            if (sensor_name.find('gnss') != -1):
+                saveGnss(sensor_data, os.path.join(
+                    out_root_folder, sensor_name), sensor_name)
 
-            elif 'semantic_segmentation_camera' in sensor_name:
-                saveSegImage(sensor_data, os.path.join(out_root_folder, sensor_name))
-            
-            elif 'instance_segmentation_camera' in sensor_name:
-                saveISImage(sensor_data, os.path.join(out_root_folder, sensor_name))
-
-            elif 'imu' in sensor_name:
-                saveImu(sensor_data, os.path.join(out_root_folder, sensor_name), sensor_name)
-
-            elif 'gnss' in sensor_name:
-                saveGnss(sensor_data, os.path.join(out_root_folder, sensor_name), sensor_name)
-
-        concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
-    
+        concurrent.futures.wait(
+            futures, return_when=concurrent.futures.ALL_COMPLETED)
     return
+
 
 def saveSnapshot(output, filepath):
     return
@@ -449,60 +446,94 @@ def save_kitti_3d_format(annotations, filepath):
             file.write(str(element) + "\n")
 
 
-def saveRgbImage(output, filepath, world, sensor, depth):
-    """
-    RGB画像と、それに対応する3Dバウンディングボックスを保存する
-    """
+def saveRgbImage(output, filepath, world, sensor, ego_vehicle, dvs, depth):
     try:
-        os.makedirs(filepath, exist_ok=True)
-        # Depthデータを正規化
+        dvs_filepath = filepath.replace('rgb', 'dvs', 1)
+        os.makedirs(dvs_filepath, exist_ok=True)
+
+        dvs_events = np.frombuffer(dvs.raw_data, dtype=np.dtype([
+            ('x', np.uint16), ('y', np.uint16), ('t', np.int64), ('pol', bool)
+        ]))
+        output_file_path = os.path.join(
+            dvs_filepath, f'dvs-{output.frame}-xytp.npz')
+        np.savez_compressed(output_file_path, dvs_events=dvs_events)
+        
+        dvs_events2 = np.frombuffer(dvs.raw_data, dtype=np.dtype([
+            ('x', np.uint16), ('y', np.uint16), ('t', np.int64), ('pol', bool)]))
+        dvs_img = np.zeros((dvs.height, dvs.width, 3), dtype=np.uint8)
+        dvs_img[dvs_events2[:]['y'], dvs_events2[:]['x'], dvs_events2[:]['pol'] * 2] = 255
+        surface = pygame.surfarray.make_surface(dvs_img.swapaxes(0, 1))
+
         array = np.frombuffer(depth.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (depth.height, depth.width, 4))
-        array = array[:, :, :3].astype(np.float32)
+        array = array[:, :, :3]
+        array = array.astype(np.float32)
         normalized_depth = np.dot(array, [65536.0, 256.0, 1.0])
         normalized_depth /= 16777215.0
         deptharray = normalized_depth * 1000
 
-        # RGB画像データをnumpy配列に変換
         img = np.frombuffer(output.raw_data, dtype=np.uint8).reshape(
             (output.height, output.width, 4))
 
-        # RGB用の3Dバウンディングボックス (アノテーション) を計算
         calibration = np.identity(3)
         calibration[0, 2] = output.width / 2.0
         calibration[1, 2] = output.height / 2.0
         calibration[0, 0] = calibration[1, 1] = output.width / \
             (2.0 * np.tan(output.fov * np.pi / 360.0))
-        
         kitti3dbb = []
-        actors = world.get_actors()
-        for vehicle in actors.filter("*vehicle*"):
+        kitti3dbbDVS = []
+
+        for vehicle in world.get_actors().filter("*vehicle*"):
             bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
                 [vehicle], sensor, output.height, output.width, output.fov)
             for bbox in bounding_boxes:
-                _, datapoint, _ = create_kitti_datapoint(
-                    vehicle, sensor, calibration, img, deptharray, output.transform, bbox)
+                points = [(int(bbox[i, 0]), int(bbox[i, 1]))
+                          for i in range(8)]
+                bounding_box = get_2d_bounding_box(
+                    np.array(points, dtype=np.int32))
+                min_x, min_y, xdiff, ydiff = bounding_box
+                isDvs = is_dvs_event_inside_bbox(
+                    dvs_events, min_x, min_y, min_x + xdiff, min_y + ydiff)
+                transform = output.transform
+                image, datapoint, camera_bbox = create_kitti_datapoint(
+                    vehicle, sensor, calibration, img, deptharray, transform, bbox)
                 if datapoint is not None:
                     kitti3dbb.append(datapoint)
-        
-        for pedestrian in actors.filter("*pedestrian*"):
-            bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
-                [pedestrian], sensor, output.height, output.width, output.fov)
-            for bbox in bounding_boxes:
-                _, datapoint, _ = create_kitti_datapoint(
-                    pedestrian, sensor, calibration, img, deptharray, output.transform, bbox)
-                if datapoint is not None:
-                    kitti3dbb.append(datapoint)
+                    if isDvs == True:
+                        kitti3dbbDVS.append(datapoint)
 
-        # RGB画像を .png として保存
-        output_file = os.path.join(filepath, f'{output.frame}.png')
+        for vehicle in world.get_actors().filter("*pedestrian*"):
+            bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
+                [vehicle], sensor, output.height, output.width, output.fov)
+            for bbox in bounding_boxes:
+                points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
+                bounding_box = get_2d_bounding_box(
+                    np.array(points, dtype=np.int32))
+                min_x, min_y, xdiff, ydiff = bounding_box
+                transform = output.transform
+                image, datapoint, camera_bbox = create_kitti_datapoint(
+                    vehicle, sensor, calibration, img, deptharray, transform, bbox)
+                isDvs = is_dvs_event_inside_bbox(
+                    dvs_events, min_x, min_y, min_x + xdiff, min_y + ydiff)
+                if datapoint is not None:
+                    kitti3dbb.append(datapoint)
+                    if isDvs == True:
+                        kitti3dbbDVS.append(datapoint)
+
+        output_file = os.path.join(
+            filepath, f'{output.frame}.png')
         cv2.imwrite(output_file, img)
 
-        # RGB用のラベルファイルを .txt として保存
-        save_kitti_3d_format(kitti3dbb, os.path.join(filepath, f'{output.frame}.txt'))
+        output_file_dvs = os.path.join(dvs_filepath, f'dvs-{output.frame}.png')
+        pygame.image.save(surface, output_file_dvs)
+
+        save_kitti_3d_format(kitti3dbb, os.path.join(
+            filepath, f'{output.frame}.txt'))
+        save_kitti_3d_format(kitti3dbbDVS, os.path.join(
+            dvs_filepath, f'dvs-{output.frame}.txt'))
 
     except Exception as error:
-        print(f"An exception occurred in saveRgbImage for frame {output.frame}:", error)
+        print("An exception occurred:", error)
         traceback.print_exc()
 
 
@@ -608,62 +639,9 @@ def saveSegImage(output, filepath):
         fp.writelines(str(output.transform) + "\n")
 
 
-def saveDvsImage(output, filepath, world, sensor):
-    """
-    DVSのイベントデータ、可視化画像、3Dバウンディングボックスを専用ディレクトリに保存する
-    """
-    try:
-        os.makedirs(filepath, exist_ok=True)
-        # DVSイベントデータを .npz ファイルとして保存
-        dvs_events = np.frombuffer(output.raw_data, dtype=np.dtype([
-            ('x', np.uint16), ('y', np.uint16), ('t', np.int64), ('pol', bool)
-        ]))
-        output_file_path = os.path.join(filepath, f'dvs-{output.frame}-xytp.npz')
-        np.savez_compressed(output_file_path, dvs_events=dvs_events)
-
-        # DVSイベントを可視化して .png 画像として保存
-        dvs_img = np.zeros((output.height, output.width, 3), dtype=np.uint8)
-        dvs_img[dvs_events[:]['y'], dvs_events[:]['x'], dvs_events[:]['pol'] * 2] = 255
-        surface = pygame.surfarray.make_surface(dvs_img.swapaxes(0, 1))
-        output_file = os.path.join(filepath, f'dvs-{output.frame}.png')
-        pygame.image.save(surface, output_file)
-
-        # DVS用の3Dバウンディングボックス (アノテーション) を計算
-        calibration = np.identity(3)
-        calibration[0, 2] = output.width / 2.0
-        calibration[1, 2] = output.height / 2.0
-        calibration[0, 0] = calibration[1, 1] = output.width / \
-            (2.0 * np.tan(output.fov * np.pi / 360.0))
-        
-        kitti3dbbDVS = []
-        
-        actors = world.get_actors()
-        for vehicle in actors.filter("*vehicle*"):
-            bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
-                [vehicle], sensor, output.height, output.width, output.fov)
-            for bbox in bounding_boxes:
-                points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
-                min_x, min_y, xdiff, ydiff = get_2d_bounding_box(np.array(points, dtype=np.int32))
-                if is_dvs_event_inside_bbox(dvs_events, min_x, min_y, min_x + xdiff, min_y + ydiff):
-                    # NOTE: DVS単独処理のため、RGB画像(img)とDepth(deptharray)はNoneとして渡す
-                    _, datapoint, _ = create_kitti_datapoint(vehicle, sensor, calibration, None, None, output.transform, bbox)
-                    if datapoint is not None:
-                        kitti3dbbDVS.append(datapoint)
-
-        for pedestrian in actors.filter("*pedestrian*"):
-            bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
-                [pedestrian], sensor, output.height, output.width, output.fov)
-            for bbox in bounding_boxes:
-                points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
-                min_x, min_y, xdiff, ydiff = get_2d_bounding_box(np.array(points, dtype=np.int32))
-                if is_dvs_event_inside_bbox(dvs_events, min_x, min_y, min_x + xdiff, min_y + ydiff):
-                    _, datapoint, _ = create_kitti_datapoint(pedestrian, sensor, calibration, None, None, output.transform, bbox)
-                    if datapoint is not None:
-                        kitti3dbbDVS.append(datapoint)
-
-        # DVS用のラベルファイルを .txt として保存
-        save_kitti_3d_format(kitti3dbbDVS, os.path.join(filepath, f'dvs-{output.frame}.txt'))
-
-    except Exception as error:
-        print(f"An exception occurred in saveDvsImage for frame {output.frame}:", error)
-        traceback.print_exc()
+def saveDvsImage(output, filepath):
+    output.convert(carla.ColorConverter.CityScapesPalette)
+    output.save_to_disk(filepath + '/%05d' % output.frame)
+    with open(filepath + "/seg_camera_metadata.txt", 'a') as fp:
+        fp.writelines(str(output) + ", ")
+        fp.writelines(str(output.transform) + "\n")
