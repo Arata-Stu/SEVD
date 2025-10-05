@@ -62,7 +62,8 @@ python main.py \
     --ignore-first-n-ticks=$IGNORE_TICKS \
     --duration=$DURATION \
     --start-weather=$START_WEATHER \
-    --end-weather=$END_WEATHER
+    --end-weather=$END_WEATHER \
+    -a
 
 EXIT_CODE=$?
 
