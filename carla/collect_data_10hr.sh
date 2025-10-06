@@ -3,6 +3,7 @@
 # =================================================================
 # 設定セクション
 # =================================================================
+OUTPUT_DIR="out_10hr"
 
 MAPS=(
     "Town01_Opt" "Town02_Opt" "Town03_Opt" "Town04_Opt" 
@@ -96,7 +97,7 @@ for map_name in "${MAPS[@]}"; do
                 --timeout=$TIMEOUT \
                 --ignore-first-n-ticks=$IGNORE_TICKS \
                 --duration=$DURATION \
-                -a
+                --output-dir=$OUTPUT_DIR
 
             EXIT_CODE=$?
 
