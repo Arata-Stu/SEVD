@@ -59,7 +59,7 @@ def main():
     SimulationParams.PHASE = SimulationParams.town_map + \
         "_" + SimulationParams.dt_string
     SimulationParams.data_output_subfolder = os.path.join(
-        "out/", SimulationParams.PHASE)
+        args.output_dir, SimulationParams.PHASE)
     SimulationParams.manual_control = args.manual_control
     SimulationParams.fixed_perception = args.fixed_perception
     SimulationParams.res = args.res
