@@ -274,24 +274,50 @@ def main():
                     start_weather, end_weather, progress)
                 world.set_weather(current_weather)
     finally:
-        print("\nSimulation finished.")
-        # stop pedestrians
+        print("\nSimulation finished. Starting cleanup process...")
+        # この時点ではまだ同期モードが有効なはずです
+
+        # 1. 歩行者のAIを停止させます
+        print("Stopping walkers...")
         for i in range(0, len(w_all_actors)):
             try:
-                w_all_actors[i].stop()
-            except:
+                # アクターがまだ存在するか確認すると、より安全です
+                if w_all_actors[i].is_alive:
+                    w_all_actors[i].stop()
+            except Exception:
+                # すでに破棄されている場合などは何もしません
                 pass
-        # destroy actors
+        
+        # 2. すべてのアクターを破棄するコマンドを送信します
+        print("Destroying all actors...")
         client.apply_batch([carla.command.DestroyActor(x) for x in w_all_id])
         client.apply_batch([carla.command.DestroyActor(x) for x in v_all_id])
 
         for ego in egos:
             ego.destroy()
 
-        # prevent Unreal from crashing
+        # -------------------- ここからが重要な修正点 --------------------
+        # 3. サーバーがアクターの破棄を完了するのを待ちます
+        #    同期モードが有効なので、tick()を呼び出してサーバーの時間を進めます
+        try:
+            print("Ticking world to finalize cleanup...")
+            # 念のため数回tickを呼び出し、処理を確実にします
+            for _ in range(5): 
+                world.tick()
+        except RuntimeError as e:
+            # シミュレーターがすでに終了処理に入っている場合にエラーになることがありますが、
+            # クリーンアップ段階では問題ないことが多いです。
+            print(f"Could not tick the world during cleanup, this might be okay. Error: {e}")
+
+        # 4. 最後に、安全な状態で同期モードを解除します
+        print("Disabling synchronous mode...")
         settings = world.get_settings()
-        settings.synchronous_mode = False
-        world.apply_settings(settings)
+        if settings.synchronous_mode:
+            settings.synchronous_mode = False
+            settings.fixed_delta_seconds = None
+            world.apply_settings(settings)
+        
+        print("Cleanup process completed successfully.")
 
 
 if __name__ == '__main__':
