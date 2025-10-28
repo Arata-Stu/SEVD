@@ -44,7 +44,6 @@ END_INDEX=$TOTAL_RUNS
 BASE_DIR=$DEFAULT_BASE_DIR
 SERVER_PANE="" 
 
-# tmux引数(--server-pane)とgetopts引数を分離
 ARGS_FOR_GETOPTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -59,17 +58,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# getopts のために引数を再設定
 set -- "${ARGS_FOR_GETOPTS[@]}"
 
-# ヘルプ関数 (getoptsより前に定義)
 usage() {
     echo "Usage: $0 (called from start_tmux.sh) [-b BASE_DIR] [-s START_INDEX] [-e END_INDEX]"
     echo "  --server-pane <pane_id> は start_tmux.sh から自動で渡されます。"
     exit 1
 }
 
-# getopts による引数解析
 while getopts "b:s:e:h" opt; do
     case ${opt} in
         b) BASE_DIR=$OPTARG ;;
@@ -80,12 +76,15 @@ while getopts "b:s:e:h" opt; do
     esac
 done
 
-# --server-pane が必須
 if [ -z "$SERVER_PANE" ]; then
     echo "❌ エラー: --server-pane が指定されていません。"
     echo "   このスクリプトは 'start_tmux.sh' から実行してください。"
     exit 1
 fi
+
+# 今回の実行回数を計算
+THIS_TOTAL_RUNS=$((END_INDEX - START_INDEX + 1))
+CURRENT_STEP=0
 
 # =================================================================
 # 実行セクション
@@ -99,13 +98,14 @@ echo " CARLA 制御ループ (tmux) を開始します"
 echo "   (このペインでAPI実行、左ペイン ($SERVER_PANE) でサーバー実行)"
 echo "================================================="
 echo "📂 ベースディレクトリ: $RUN_BASE_DIR"
-echo "🎯 実行範囲: $START_INDEX から $END_INDEX まで"
+echo "🎯 実行範囲: $START_INDEX から $END_INDEX まで (計 $THIS_TOTAL_RUNS 件)"
 echo "================================================="
 echo ""
 
-# 指定されたIDの範囲でループ
 for (( CURRENT_RUN=START_INDEX; CURRENT_RUN<=END_INDEX; CURRENT_RUN++ ))
 do
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+
     # --- 1. パラメータの特定 ---
     IDX=$((CURRENT_RUN - 1))
     MAP_IDX=$((IDX / NUM_WEATHERS))
@@ -120,7 +120,7 @@ do
     mkdir -p "$OUTPUT_DIR"
 
     echo "================================================="
-    echo "🔄 実行中 ($CURRENT_RUN/$TOTAL_RUNS)"
+    echo "🔄 実行中 (シーケンス $CURRENT_RUN / 全体 $TOTAL_RUNS) --- [今回の $CURRENT_STEP / $THIS_TOTAL_RUNS 件目]"
     echo "================================================="
     echo "   💾 保存先: $OUTPUT_DIR"
     echo ""
@@ -155,9 +155,9 @@ do
 
     echo ""
     if [ $COLLECT_EXIT_CODE -eq 0 ]; then
-        echo "✅ データ収集 完了 ($CURRENT_RUN/$TOTAL_RUNS)"
+        echo "✅ データ収集 完了 ($CURRENT_STEP / $THIS_TOTAL_RUNS 件目)"
     else
-        echo "❌ データ収集 エラー ($CURRENT_RUN/$TOTAL_RUNS)"
+        echo "❌ データ収集 エラー ($CURRENT_STEP / $THIS_TOTAL_RUNS 件目)"
         touch "${OUTPUT_DIR}/_ERROR"
     fi
     echo ""
@@ -182,7 +182,6 @@ do
         echo "   サーバー(PID: $SERVER_PID) は既に停止していました。"
     fi
     
-    # --- ポート解放の確認 ---
     echo "   CARLAポート (2000-2002) をクリーンアップします..."
     if command -v fuser &> /dev/null; then
         fuser -k -n tcp 2000 2>/dev/null
