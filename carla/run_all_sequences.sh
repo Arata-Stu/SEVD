@@ -21,10 +21,12 @@ export IGNORE_TICKS=35
 export DURATION=18000
 export TIMEOUT=60
 
+
+# "Town11" "Town12" "Town13" はSpawnWalker関連のエラーが確認された
 MAPS=(
     "Town01_Opt" "Town02_Opt" "Town03_Opt" "Town04_Opt"
     "Town05_Opt" "Town06_Opt" "Town07_Opt" "Town10HD_Opt"
-    "Town11" "Town12" "Town13" "Town15"
+    "Town15"
 )
 GOOD_WEATHERS=(
     "ClearNoon" "CloudyNoon" "SoftRainNoon"
