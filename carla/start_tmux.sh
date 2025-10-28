@@ -33,10 +33,15 @@ tmux send-keys -t $SERVER_PANE "echo '制御スクリプトからの起動を待
 
 # 4. 右ペイン (0.1) で制御スクリプトを実行
 API_PANE="$SESSION_NAME:0.1"
-# run_all_sequences.sh に、サーバーペインのIDと、
-# このスクリプトに渡された引数(例: -s 5 -e 10)をそのまま渡す($@)
-tmux send-keys -t $API_PANE \
-    "bash ./run_all_sequences.sh --server-pane $SERVER_PANE $@" C-m
+CMD="bash ./run_all_sequences.sh --server-pane $SERVER_PANE"
+
+# start_tmux.sh に渡された引数($@)をループ処理
+for arg in "$@"; do
+    CMD+=" $(printf "%q" "$arg")"
+done
+
+# 構築したコマンド全体を tmux に送信
+tmux send-keys -t $API_PANE "$CMD" C-m
 
 echo "✅ セッション '$SESSION_NAME' がバックグラウンドで起動しました。"
 echo ""
