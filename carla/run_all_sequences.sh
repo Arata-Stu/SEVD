@@ -150,7 +150,7 @@ do
 
     # --- 3. Terminal 2 (右ペイン): データ収集スクリプト (子) を実行 ---
     #    (環境変数は export 済みなので、そのまま呼び出す)
-    bash ./run_single_carla.sh
+    bash ./run_sequence.sh
     COLLECT_EXIT_CODE=$?
 
     echo ""

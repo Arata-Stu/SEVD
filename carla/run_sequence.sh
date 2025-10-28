@@ -8,7 +8,7 @@ echo "   💾  保存先: $OUTPUT_DIR"
 echo "   🚗  車両数: $NUM_VEHICLES"
 echo "   🚶  歩行者数: $NUM_WALKERS"
 echo "-----------------------------------"
-
+source ../env/bin/activate
 # 渡された環境変数をそのまま引数としてpythonスクリプトを実行
 python main.py \
     --map="$MAP_NAME" \
@@ -33,6 +33,8 @@ if [ $EXIT_CODE -eq 0 ]; then
 else
     echo "--- ❌ Pythonスクリプトエラー (終了コード: $EXIT_CODE) ---"
 fi
+
+deactivate
 
 # 終了コードを親スクリプトに返す
 exit $EXIT_CODE
