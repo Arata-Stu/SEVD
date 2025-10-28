@@ -5,7 +5,7 @@
 # 設定セクション
 # =================================================================
 DEFAULT_BASE_DIR="dataset"
-CARLA_SCRIPT="./CarlaUE4.sh" 
+CARLA_SCRIPT="./../../CARLA_0.9.16/CARLA_0.9.16/CarlaUE4.sh" 
 SERVER_WAIT_TIME=15 
 PID_FILE="/tmp/carla_server.pid" 
 
