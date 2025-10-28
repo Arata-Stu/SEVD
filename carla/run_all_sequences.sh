@@ -1,5 +1,9 @@
 #!/bin/bash
 #
+# 親スクリプト: run_all_sequences.sh
+# ---------------------------------
+# tmux の右ペインで実行され、左ペインのサーバーを制御する。
+#
 
 # =================================================================
 # 設定セクション
@@ -33,24 +37,22 @@ NUM_WEATHERS=${#GOOD_WEATHERS[@]}
 TOTAL_RUNS=$(($NUM_MAPS * $NUM_WEATHERS))
 
 # =================================================================
-# 引数解析セクション (tmux引数をパースするよう変更)
+# 引数解析セクション
 # =================================================================
 START_INDEX=1
 END_INDEX=$TOTAL_RUNS
 BASE_DIR=$DEFAULT_BASE_DIR
-SERVER_PANE="" # tmux のサーバーペインID (例: carla_data:0.0)
+SERVER_PANE="" 
 
-# getopts が解釈する引数と、このスクリプト固有の引数(--server-pane)を分離
+# tmux引数(--server-pane)とgetopts引数を分離
 ARGS_FOR_GETOPTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --server-pane)
             SERVER_PANE="$2"
-            shift # --server-pane
-            shift # <pane_id>
+            shift 2
             ;;
         *)
-            # getopts 用の引数として保存
             ARGS_FOR_GETOPTS+=("$1")
             shift
             ;;
@@ -60,12 +62,14 @@ done
 # getopts のために引数を再設定
 set -- "${ARGS_FOR_GETOPTS[@]}"
 
+# ヘルプ関数 (getoptsより前に定義)
 usage() {
     echo "Usage: $0 (called from start_tmux.sh) [-b BASE_DIR] [-s START_INDEX] [-e END_INDEX]"
     echo "  --server-pane <pane_id> は start_tmux.sh から自動で渡されます。"
     exit 1
 }
 
+# getopts による引数解析
 while getopts "b:s:e:h" opt; do
     case ${opt} in
         b) BASE_DIR=$OPTARG ;;
@@ -76,7 +80,7 @@ while getopts "b:s:e:h" opt; do
     esac
 done
 
-# --server-pane が指定されていない場合はエラー
+# --server-pane が必須
 if [ -z "$SERVER_PANE" ]; then
     echo "❌ エラー: --server-pane が指定されていません。"
     echo "   このスクリプトは 'start_tmux.sh' から実行してください。"
@@ -84,7 +88,7 @@ if [ -z "$SERVER_PANE" ]; then
 fi
 
 # =================================================================
-# 実行セクション (tmux制御ロジックを追加)
+# 実行セクション
 # =================================================================
 TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
 RUN_BASE_DIR="${BASE_DIR}/${TIMESTAMP}_${START_INDEX}_${END_INDEX}"
@@ -124,15 +128,12 @@ do
     # --- 2. Terminal 1 (左ペイン): CARLAサーバーを起動 ---
     echo "🚀 CARLAサーバーを $SERVER_PANE で起動します..."
     
-    # 古いPIDファイルを削除し、サーバーをバックグラウンドで起動(&)して、
-    # そのPIDをファイルに出力(>)するコマンドを tmux 経由で送信
     tmux send-keys -t "$SERVER_PANE" \
         "rm -f $PID_FILE; bash $CARLA_SCRIPT -RenderOffScreen & echo \$! > $PID_FILE" C-m
 
     echo "   起動待機中... ($SERVER_WAIT_TIME 秒)"
     sleep $SERVER_WAIT_TIME
 
-    # PIDファイルが作成されたか、プロセスが実在するかを確認
     if [ ! -f "$PID_FILE" ]; then
         echo "❌ サーバーPIDファイル ($PID_FILE) が見つかりません。起動失敗。"
         tmux send-keys -t "$SERVER_PANE" "echo '!! 起動に失敗したようです !!'" C-m
@@ -149,7 +150,6 @@ do
     echo ""
 
     # --- 3. Terminal 2 (右ペイン): データ収集スクリプト (子) を実行 ---
-    #    (環境変数は export 済みなので、そのまま呼び出す)
     bash ./run_sequence.sh
     COLLECT_EXIT_CODE=$?
 
@@ -162,18 +162,17 @@ do
     fi
     echo ""
 
-   echo "🛑 CARLAサーバー (PID: $SERVER_PID) を停止します..."
+    # --- 4. Terminal 1 (左ペイン): CARLAサーバーを停止 ---
+    echo "🛑 CARLAサーバー (PID: $SERVER_PID) を停止します..."
     if kill -0 $SERVER_PID 2>/dev/null; then
-        # まず通常の kill (SIGTERM) を試みる
         kill $SERVER_PID
         
-        # 5秒待っても終了しないかチェック
         echo "   (終了待機中... 5秒)"
         sleep 5 
         if kill -0 $SERVER_PID 2>/dev/null; then
             echo "   プロセスが終了しません。強制終了 (kill -9) します。"
             kill -9 $SERVER_PID
-            sleep 2 # 強制終了が反映されるまで少し待つ
+            sleep 2 
         else
             echo "   プロセスは正常に終了しました。"
         fi
@@ -183,17 +182,14 @@ do
         echo "   サーバー(PID: $SERVER_PID) は既に停止していました。"
     fi
     
-    # --- ポート解放の確認 (重要) ---
+    # --- ポート解放の確認 ---
     echo "   CARLAポート (2000-2002) をクリーンアップします..."
-    # fuser がインストールされているか確認
     if command -v fuser &> /dev/null; then
-        # -k: kill, -n tcp: TCPプロトコル指定
-        # 2>/dev/null は「該当プロセスなし」のエラー出力を抑制するため
         fuser -k -n tcp 2000 2>/dev/null
         fuser -k -n tcp 2001 2>/dev/null
         fuser -k -n tcp 2002 2>/dev/null
     else
-        echo "   (警告: 'fuser' コマンドが見つかりません。ポートのクリーンアップをスキップします。)"
+        echo "   (警告: 'fuser' コマンドが見つかりません。)"
         echo "   (推奨: sudo apt install psmisc)"
     fi
     
@@ -205,5 +201,4 @@ done
 echo "================================================="
 echo "✅✅ 指定範囲の全ての処理が完了しました"
 echo "================================================="
-# 左ペインにも完了を通知
 tmux send-keys -t "$SERVER_PANE" "echo '--- 全ての処理が完了しました ---'" C-m
