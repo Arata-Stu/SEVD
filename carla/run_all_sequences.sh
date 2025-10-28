@@ -162,20 +162,44 @@ do
     fi
     echo ""
 
-    # --- 4. Terminal 1 (左ペイン): CARLAサーバーを停止 ---
-    echo "🛑 CARLAサーバー (PID: $SERVER_PID) を停止します..."
+   echo "🛑 CARLAサーバー (PID: $SERVER_PID) を停止します..."
     if kill -0 $SERVER_PID 2>/dev/null; then
+        # まず通常の kill (SIGTERM) を試みる
         kill $SERVER_PID
-        wait $SERVER_PID 2>/dev/null
-        # 左ペインにも終了したことを通知（任意）
+        
+        # 5秒待っても終了しないかチェック
+        echo "   (終了待機中... 5秒)"
+        sleep 5 
+        if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "   プロセスが終了しません。強制終了 (kill -9) します。"
+            kill -9 $SERVER_PID
+            sleep 2 # 強制終了が反映されるまで少し待つ
+        else
+            echo "   プロセスは正常に終了しました。"
+        fi
+        
         tmux send-keys -t "$SERVER_PANE" "echo 'サーバー(PID: $SERVER_PID) は停止しました。'" C-m
     else
-        echo "   サーバーは既に停止していました。"
+        echo "   サーバー(PID: $SERVER_PID) は既に停止していました。"
     fi
-    echo "   サーバー停止完了。"
+    
+    # --- ポート解放の確認 (重要) ---
+    echo "   CARLAポート (2000-2002) をクリーンアップします..."
+    # fuser がインストールされているか確認
+    if command -v fuser &> /dev/null; then
+        # -k: kill, -n tcp: TCPプロトコル指定
+        # 2>/dev/null は「該当プロセスなし」のエラー出力を抑制するため
+        fuser -k -n tcp 2000 2>/dev/null
+        fuser -k -n tcp 2001 2>/dev/null
+        fuser -k -n tcp 2002 2>/dev/null
+    else
+        echo "   (警告: 'fuser' コマンドが見つかりません。ポートのクリーンアップをスキップします。)"
+        echo "   (推奨: sudo apt install psmisc)"
+    fi
+    
+    echo "   サーバー停止・クリーンアップ完了。"
     echo ""
     echo "-------------------------------------------------"
-    echo ""
 done
 
 echo "================================================="
