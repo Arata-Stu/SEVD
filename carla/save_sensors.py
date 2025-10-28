@@ -484,9 +484,6 @@ def saveRgbImage(output, filepath, world, sensor, ego_vehicle, dvs, depth):
         kitti3dbbDVS = []
 
         for vehicle in world.get_actors().filter("*vehicle*"):
-            # ★ 1. アクターのIDを取得
-            vehicle_id = vehicle.id
-            
             bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
                 [vehicle], sensor, output.height, output.width, output.fov)
             for bbox in bounding_boxes:
@@ -500,20 +497,12 @@ def saveRgbImage(output, filepath, world, sensor, ego_vehicle, dvs, depth):
                 transform = output.transform
                 image, datapoint, camera_bbox = create_kitti_datapoint(
                     vehicle, sensor, calibration, img, deptharray, transform, bbox)
-                
                 if datapoint is not None:
-                    # ★ 2. datapoint文字列の末尾にIDを追加
-                    datapoint_with_id = f"{datapoint} {vehicle_id}"
-                    
-                    # ★ 3. ID付きの文字列をリストに追加
-                    kitti3dbb.append(datapoint_with_id)
+                    kitti3dbb.append(datapoint)
                     if isDvs == True:
-                        kitti3dbbDVS.append(datapoint_with_id)
+                        kitti3dbbDVS.append(datapoint)
 
         for vehicle in world.get_actors().filter("*pedestrian*"):
-             # ★ 1. アクターのIDを取得
-            vehicle_id = vehicle.id
-
             bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(
                 [vehicle], sensor, output.height, output.width, output.fov)
             for bbox in bounding_boxes:
@@ -526,15 +515,10 @@ def saveRgbImage(output, filepath, world, sensor, ego_vehicle, dvs, depth):
                     vehicle, sensor, calibration, img, deptharray, transform, bbox)
                 isDvs = is_dvs_event_inside_bbox(
                     dvs_events, min_x, min_y, min_x + xdiff, min_y + ydiff)
-                
                 if datapoint is not None:
-                    # ★ 2. datapoint文字列の末尾にIDを追加
-                    datapoint_with_id = f"{datapoint} {vehicle_id}"
-                    
-                    # ★ 3. ID付きの文字列をリストに追加
-                    kitti3dbb.append(datapoint_with_id)
+                    kitti3dbb.append(datapoint)
                     if isDvs == True:
-                        kitti3dbbDVS.append(datapoint_with_id)
+                        kitti3dbbDVS.append(datapoint)
 
         output_file = os.path.join(
             filepath, f'{output.frame}.png')
