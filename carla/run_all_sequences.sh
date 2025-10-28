@@ -10,7 +10,7 @@
 # =================================================================
 DEFAULT_BASE_DIR="dataset"
 CARLA_SCRIPT="./../../CARLA_0.9.16/CARLA_0.9.16/CarlaUE4.sh" 
-SERVER_WAIT_TIME=15 
+SERVER_WAIT_TIME=60 
 PID_FILE="/tmp/carla_server.pid" 
 
 export NUM_EGO_VEHICLES=1
