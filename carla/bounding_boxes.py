@@ -27,7 +27,8 @@ class ClientSideBoundingBoxes(object):
         bounding_boxes = [ClientSideBoundingBoxes.get_bounding_box(
             vehicle, camera, h, w, fov) for vehicle in vehicles]
         # filter objects behind camera
-        bounding_boxes = [bb for bb in bounding_boxes if all(bb[:, 2] > 0)]
+        ########
+        bounding_boxes = [bb for bb in bounding_boxes if any(bb[:, 2] > 0)]
         return bounding_boxes
 
     @staticmethod
@@ -146,7 +147,8 @@ class ClientSideBoundingBoxes(object):
         bounding_boxes = [ClientSideBoundingBoxes.get_bounding_box_parked_vehicle(
             vehicle, camera, h, w, fov) for vehicle in bboxes]
         # filter objects behind camera
-        bounding_boxes = [bb for bb in bounding_boxes if all(bb[:, 2] > 0)]
+        ##############
+        bounding_boxes = [bb for bb in bounding_boxes if any(bb[:, 2] > 0)]
         return bounding_boxes
 
     @staticmethod
@@ -293,7 +295,7 @@ def create_kitti_datapoint(agent, camera, cam_calibration, image, depth_map, pla
                                                                                   draw_vertices=False)
 
     # At least N vertices has to be visible in order to draw bbox
-    if num_visible_vertices >= MIN_VISIBLE_VERTICES_FOR_RENDER > num_vertices_outside_camera:
+    if num_visible_vertices >= MIN_VISIBLE_VERTICES_FOR_RENDER:
 
         # TODO I checked for pedestrians and it works. Test for vehicles too!
         # Visualize midpoint for agents
