@@ -183,7 +183,7 @@ def main():
         client,
         world,
         vehicles_spawn_points,
-        blueprint_library,                 # ← ここが blueprintsVehicles から変更
+        blueprint_library,                 
         ratios,
         SimulationParams.num_of_vehicles,
     )
@@ -191,7 +191,7 @@ def main():
     # 結果確認 & メタデータ用のカウント
     for actor in v_all_actors:
         actor_type = actor.attributes.get('base_type')
-        print("[SPAWNED]", actor.type_id, "base_type:", actor_type)
+        # print("[SPAWNED]", actor.type_id, "base_type:", actor_type)
         if actor_type in participant_density:
             participant_density[actor_type] += 1
 

@@ -165,6 +165,8 @@ class KittiDescriptor:
         self.object_id = 0
 
     def set_type(self, obj_type: str):
+        if not obj_type:
+            obj_type = "misc"
         assert obj_type in self._valid_classes, "Object must be of types {}".format(
             self._valid_classes)
         self.type = obj_type
