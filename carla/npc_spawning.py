@@ -1,4 +1,5 @@
 import carla
+from carla import command
 import random
 import logging
 import math
@@ -10,51 +11,100 @@ SetVehicleLightState = carla.command.SetVehicleLightState
 FutureActor = carla.command.FutureActor
 
 
-def spawnVehicles(client, world, spawn_points, blueprintsVehicles, number):
-    print("Spawning vehicles...")
-    customBp = {
-        'vehicle.bh.crossbike': 8,
-        'vehicle.carlamotors.firetruck': 3,
-        'vehicle.ford.ambulance': 3,
-        'vehicle.dodge.charger_police': 6,
-        'vehicle.mercedes.coupe': 7,
-        'vehicle.tesla.model3': 7,
-        'vehicle.audi.a2': 7,
-        'vehicle.jeep.wrangler_rubicon': 7,
-        'vehicle.tesla.cybertruck': 3,
-        'vehicle.ford.mustang': 8,
-        'vehicle.toyota.prius': 8,
-        'vehicle.kawasaki.ninja': 11,
-        'vehicle.vespa.zx125': 11,
-        'vehicle.harley-davidson.low_rider': 11
+def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_num):
+    """
+    ratios = {
+        "car": 0.60,
+        "van": 0.10,
+        "truck": 0.10,
+        "motorcycle": 0.20,
+        "bus": 0.00,
+        "bicycle": 0.00,
+    }
+    """
+
+    # カテゴリ別の blueprint ID リスト
+    CATEGORIES = {
+        "car": [
+            "vehicle.dodge.charger_2020",
+            "vehicle.dodge.charger_police_2020",
+            "vehicle.ford.crown_taxi",
+            "vehicle.lincoln.mkz_2020",
+            "vehicle.mercedes.coupe_2020",
+            "vehicle.mini.cooper_s_2021",
+            "vehicle.nissan.patrol_2021"
+        ],
+        "van": [
+            "vehicle.ford.ambulance",
+            "vehicle.mercedes.sprinter",
+            "vehicle.volkswagen.t2_2021"
+        ],
+        "truck": [
+            "vehicle.carlamotors.european_hgv",
+            "vehicle.carlamotors.firetruck",
+            "vehicle.tesla.cybertruck"
+        ],
+        "motorcycle": [
+            "vehicle.harley-davidson.low_rider",
+            "vehicle.kawasaki.ninja",
+            "vehicle.vespa.zx125",
+            "vehicle.yamaha.yzf"
+        ],
+        "bus": [
+            "vehicle.mitsubishi.fusorosa"
+        ],
+        "bicycle": [
+            "vehicle.bh.crossbike",
+            "vehicle.diamondback.century",
+            "vehicle.gazelle.omafiets"
+        ],
     }
 
+    # ---- 割合に基づきスポーン数を計算 ----------------------------------
+    spawn_plan = {}
+    for cat, ratio in ratios.items():
+        spawn_plan[cat] = int(total_num * ratio)
+
+    # 合計がズレたら修正
+    diff = total_num - sum(spawn_plan.values())
+    if diff > 0:
+        # 余ったぶんは最も比率の高いカテゴリに追加
+        max_cat = max(ratios, key=ratios.get)
+        spawn_plan[max_cat] += diff
+
+    print("Spawn plan =", spawn_plan)
+
+    # ---- batch command生成 ----------------------------------------------
     batch = []
-    if number < 10:
-        for i in range(number):
-            spawn_point = random.choice(spawn_points)
-            vehicle_bp = "vehicle.tesla.model3"
-            batch.append(carla.command.SpawnActor(vehicle_bp, spawn_point).then(
-                carla.command.SetAutopilot(carla.command.FutureActor, True)))
-    else:
 
-        for model, percentage in customBp.items():
-            num_per_blueprint = math.floor((number * percentage)/100)
-            vehicle_bp = world.get_blueprint_library().find(model)
-            for _ in range(num_per_blueprint):
-                spawn_point = random.choice(spawn_points)
-                batch.append(carla.command.SpawnActor(vehicle_bp, spawn_point).then(
-                    carla.command.SetAutopilot(carla.command.FutureActor, True)))
+    for category, num in spawn_plan.items():
+        bp_ids = CATEGORIES[category]
 
+        if num == 0:
+            continue
+
+        for _ in range(num):
+            bp_id = random.choice(bp_ids)
+            bp = blueprint_library.find(bp_id)
+
+            sp = random.choice(spawn_points)
+            batch.append(
+                command.SpawnActor(bp, sp).then(
+                    command.SetAutopilot(command.FutureActor, True)
+                )
+            )
+
+    # ---- Spawn 実行 ------------------------------------------------------
     results = client.apply_batch_sync(batch, True)
-
     all_id = [results[i].actor_id for i in range(len(results))]
     all_actors = world.get_actors(all_id)
     return all_actors, all_id
 
 
+
 def spawnWalkers(client, world, blueprintsWalkers, number):
     print("Spawning walkers...")
+
     # 1. Take all the random locations to spawn
     spawn_points = []
     for i in range(number):
@@ -80,8 +130,13 @@ def spawnWalkers(client, world, blueprintsWalkers, number):
     walker_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
 
     for i in range(len(walkers_list)):
-        batch.append(carla.command.SpawnActor(walker_controller_bp,
-                     carla.Transform(), walkers_list[i]["id"]))
+        batch.append(
+            carla.command.SpawnActor(
+                walker_controller_bp,
+                carla.Transform(),
+                walkers_list[i]["id"]
+            )
+        )
 
     # 3.1 apply the batch
     results = client.apply_batch_sync(batch, True)
@@ -95,17 +150,13 @@ def spawnWalkers(client, world, blueprintsWalkers, number):
         all_id.append(walkers_list[i]["id"])
     all_actors = world.get_actors(all_id)
 
-    # wait for a tick to ensure client receives the last transform of the walkers we have just created
+    # wait for a tick
     world.tick()
 
-    # 5. initialize each controller and set target to walk to (list is [controller, actor, controller, actor ...])
+    # 5. initialize walker AI
     for i in range(0, len(all_actors), 2):
-        # start walker
         all_actors[i].start()
-        # set walk to random point
-        all_actors[i].go_to_location(
-            world.get_random_location_from_navigation())
-        # random max speed
-        # max speed between 1 and 2 (default is 1.4 m/s)
+        all_actors[i].go_to_location(world.get_random_location_from_navigation())
         all_actors[i].set_max_speed(1 + random.random())
+
     return all_actors, all_id

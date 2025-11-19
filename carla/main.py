@@ -62,7 +62,6 @@ def main():
     SimulationParams.num_of_vehicles = args.number_of_vehicles
     SimulationParams.delta_seconds = args.delta_seconds
     SimulationParams.ignore_first_n_ticks = args.ignore_first_n_ticks
-    # TODO: Is > 1 ego vehicle really required?
     SimulationParams.number_of_ego_vehicles = args.number_of_ego_vehicles
     SimulationParams.PHASE = SimulationParams.town_map + "_" + SimulationParams.dt_string
     SimulationParams.data_output_subfolder = os.path.join(
@@ -111,25 +110,6 @@ def main():
     # Get all required blueprints
     blueprint_library = world.get_blueprint_library()
 
-    # 全車両 blueprint を取得
-    all_vehicle_bps = blueprint_library.filter('vehicle.*')
-
-    # 🚫 自転車 blueprint を ID ベースで除外
-    #   Generation 2:
-    #     BH - Crossbike           -> vehicle.bh.crossbike
-    #     Diamondback - Century    -> vehicle.diamondback.century
-    #     Gazelle - Omafiets       -> vehicle.gazelle.omafiets
-    bicycle_ids = {
-        "vehicle.bh.crossbike",
-        "vehicle.diamondback.century",
-        "vehicle.gazelle.omafiets",
-    }
-
-    blueprintsVehicles = [
-        bp for bp in all_vehicle_bps
-        if bp.id not in bicycle_ids
-    ]
-
     # Spawn point & walkers blueprints
     vehicles_spawn_points = world.get_map().get_spawn_points()
     blueprintsWalkers = blueprint_library.filter('walker.pedestrian.*')
@@ -146,6 +126,9 @@ def main():
         'pedestrian': 0
     }
 
+    # ---------------------------
+    # Walker spawn
+    # ---------------------------
     w_all_actors, w_all_id = spawnWalkers(
         client, world, blueprintsWalkers, SimulationParams.num_of_walkers
     )
@@ -159,6 +142,7 @@ def main():
     fixed = []
     map_name = world.get_map().name
 
+    # Fixed perception sensors
     if SimulationParams.fixed_perception is True:
         with open(SimulationParams.fixed_perception_sensor_locations_json_filepath, 'r') as json_file:
             sensor_locations = json.load(json_file)
@@ -174,25 +158,40 @@ def main():
                         coordinate,
                     ))
 
+    # Ego vehicles
     for i in range(SimulationParams.number_of_ego_vehicles):
         egos.append(EgoVehicle(
             SimulationParams.sensor_json_filepath, None, world, args
         ))
 
+    # ---------------------------
+    # Vehicle spawn (比率指定)
+    # ---------------------------
+    ratios = {
+        "car": 0.60,
+        "van": 0.10,
+        "truck": 0.10,
+        "motorcycle": 0.20,
+        "bus": 0.00,
+        "bicycle": 0.00,  
+    }
+
     v_all_actors, v_all_id = spawnVehicles(
         client,
         world,
         vehicles_spawn_points,
-        blueprintsVehicles,
+        blueprint_library,                 # ← ここが blueprintsVehicles から変更
+        ratios,
         SimulationParams.num_of_vehicles,
     )
 
+    # 結果確認 & メタデータ用のカウント
     for actor in v_all_actors:
         actor_type = actor.attributes.get('base_type')
-        print(actor.type_id)
+        print("[SPAWNED]", actor.type_id, "base_type:", actor_type)
         if actor_type in participant_density:
             participant_density[actor_type] += 1
-            
+
     world.tick()
 
     print("Starting simulation...")
