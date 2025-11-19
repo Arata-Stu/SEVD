@@ -189,8 +189,10 @@ def main():
 
     for actor in v_all_actors:
         actor_type = actor.attributes.get('base_type')
+        print(actor.type_id)
         if actor_type in participant_density:
             participant_density[actor_type] += 1
+            
     world.tick()
 
     print("Starting simulation...")
