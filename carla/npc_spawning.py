@@ -91,11 +91,11 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
             # ---------------------------
             # 🚲 Bicycle（3種）
             # ---------------------------
-            "bicycle": [
-                "vehicle.bh.crossbike",
-                "vehicle.diamondback.century",
-                "vehicle.gazelle.omafiets",
-            ],
+            # "bicycle": [
+            #     "vehicle.bh.crossbike",
+            #     "vehicle.diamondback.century",
+            #     "vehicle.gazelle.omafiets",
+            # ],
         }
 
 
@@ -103,14 +103,16 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
     # Blueprint 存在チェック
     CATEGORIES = {}
     for cat, ids in CATEGORIES_IDS.items():
-        valid = []
+        valid_bps = []
         for bp_id in ids:
             try:
                 bp = blueprint_library.find(bp_id)
-                valid.append(bp)
+                valid_bps.append(bp)
             except IndexError:
-                print(f"[WARN] Missing blueprint: {bp_id}")
-        CATEGORIES[cat] = valid
+                print(f"[WARN] Blueprint '{bp_id}' not found. Skipping.")
+                continue
+
+        CATEGORIES[cat] = valid_bps 
 
     # ===========================
     # 2. spawn_plan 作成
