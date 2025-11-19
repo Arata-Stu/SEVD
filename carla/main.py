@@ -109,8 +109,8 @@ def main():
     blueprintsVehicles = [
         bp for bp in blueprintsVehicles
         if not (
-            bp.has_attribute("base_type") and 
-            bp.get_attribute("base_type").as_string() == "bicycle"
+            bp.has_attribute("base_type") and
+            bp.get_attribute("base_type").value == "bicycle"
         )
     ]
 
