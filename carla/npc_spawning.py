@@ -1,6 +1,7 @@
 import carla
 from carla import command
 import random
+import time
 
 # Aliases
 SpawnActor = carla.command.SpawnActor
@@ -10,15 +11,10 @@ FutureActor = carla.command.FutureActor
 # ============================================================
 # 🚗 Vehicle Spawning
 # ============================================================
-def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_num):
-    """
-    安全なスポーン：衝突で spawn 失敗した場合はリトライする。
-    """
 
-    # ===========================
-    # 1. blueprint 準備（前と同じ）
-    # ===========================
-    
+def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_num):
+
+    # --- CATEGORIES_IDS はそのまま ---
     CATEGORIES_IDS = {
             # ---------------------------
             # 🚗 Car（23種）
@@ -99,78 +95,70 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
         }
 
 
-
-    # Blueprint 存在チェック
+    # 1) 実在 blueprint でフィルタ
     CATEGORIES = {}
     for cat, ids in CATEGORIES_IDS.items():
         valid_bps = []
         for bp_id in ids:
             try:
-                bp = blueprint_library.find(bp_id)
-                valid_bps.append(bp)
+                valid_bps.append(blueprint_library.find(bp_id))
             except IndexError:
-                print(f"[WARN] Blueprint '{bp_id}' not found. Skipping.")
-                continue
+                print(f"[WARN] Blueprint {bp_id} not found.")
+        CATEGORIES[cat] = valid_bps
 
-        CATEGORIES[cat] = valid_bps 
-
-    # ===========================
-    # 2. spawn_plan 作成
-    # ===========================
+    # 2) spawn_plan 作成
     spawn_plan = {cat: int(total_num * ratio) for cat, ratio in ratios.items()}
     diff = total_num - sum(spawn_plan.values())
     if diff > 0:
-        largest = max(ratios, key=lambda c: ratios[c])
-        spawn_plan[largest] += diff
+        valid = [c for c in ratios if len(CATEGORIES[c]) > 0]
+        if valid:
+            biggest = max(valid, key=lambda c: ratios[c])
+            spawn_plan[biggest] += diff
 
-    print("[Spawn plan]", spawn_plan)
+    print("[Spawn Plan]", spawn_plan)
 
-    # ===========================
-    # 3. spawn retry ロジック
-    # ===========================
-    final_ids = []
-    max_attempts = 20   # 1台あたり retry 回数
+    # 3) 1台ずつスポーン + retry
+    all_ids = []
+    all_actors = []
 
-    for category, count in spawn_plan.items():
-        bps = CATEGORIES[category]
-        if not bps or count == 0:
+    MAX_RETRY = 10
+
+    for category, num in spawn_plan.items():
+        bps = CATEGORIES.get(category, [])
+        if num == 0 or len(bps) == 0:
             continue
 
-        print(f"\n[SPAWN] Category = {category}, Target = {count}")
+        for i in range(num):
+            bp = random.choice(bps)
 
-        for i in range(count):
             success = False
-            for attempt in range(max_attempts):
-                bp = random.choice(bps)
+            for retry in range(MAX_RETRY):
                 sp = random.choice(spawn_points)
 
-                result = client.apply_batch_sync([
-                    command.SpawnActor(bp, sp)
-                        .then(command.SetAutopilot(command.FutureActor, True))
-                ], True)[0]
+                # ---- ここが重要：1 spawn ごとに apply_batch_sync ----
+                result = client.apply_batch_sync(
+                    [command.SpawnActor(bp, sp).then(
+                        command.SetAutopilot(command.FutureActor, True)
+                    )],
+                    True
+                )[0]
 
                 if result.error:
-                    # 衝突によるエラーが多い
-                    print(f"[RETRY] {bp.id} failed ({result.error}) attempt={attempt+1}")
+                    print(f"[WARN] spawn failed retry={retry+1}/{MAX_RETRY} : {result.error}")
+                    time.sleep(0.05)
                     continue
-
-                # 成功！
-                print(f"[OK] Spawned {bp.id} id={result.actor_id}")
-                final_ids.append(result.actor_id)
-                success = True
-                break
+                else:
+                    actor_id = result.actor_id
+                    all_ids.append(actor_id)
+                    all_actors.append(world.get_actor(actor_id))
+                    print(f"[OK] Spawned {bp.id} id={actor_id}")
+                    success = True
+                    break
 
             if not success:
-                print(f"[FAIL] Could NOT spawn vehicle in category {category}")
+                print(f"[ERROR] Could not spawn {bp.id} after {MAX_RETRY} retries")
 
-    # ===========================
-    # 4. gather actors
-    # ===========================
-    final_actors = world.get_actors(final_ids)
-
-    print(f"\n[SUMMARY] Spawned vehicles = {len(final_ids)} / {total_num}")
-
-    return final_actors, final_ids
+    return all_actors, all_ids
 
 
 
