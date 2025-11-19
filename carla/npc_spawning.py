@@ -81,12 +81,12 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
                 "vehicle.vespa.zx125",
             ],
 
-            # ---------------------------
-            # 🚌 Bus（1種）
-            # ---------------------------
-            "bus": [
-                "vehicle.mitsubishi.fusorosa",
-            ],
+            # # ---------------------------
+            # # 🚌 Bus（1種）
+            # # ---------------------------
+            # "bus": [
+            #     "vehicle.mitsubishi.fusorosa",
+            # ],
 
             # ---------------------------
             # 🚲 Bicycle（3種）
