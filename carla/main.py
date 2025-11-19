@@ -26,7 +26,15 @@ from carla import Transform, Location, Rotation
 import argparse
 import logging
 from npc_spawning import spawnWalkers, spawnVehicles
-from configuration import attachSensorsToVehicle, SimulationParams, setupTrafficManager, setupWorld, setupWorldWeather, createOutputDirectories, CarlaSyncMode
+from configuration import (
+    attachSensorsToVehicle,
+    SimulationParams,
+    setupTrafficManager,
+    setupWorld,
+    setupWorldWeather,
+    createOutputDirectories,
+    CarlaSyncMode,
+)
 import save_sensors
 import random
 import json
@@ -56,10 +64,10 @@ def main():
     SimulationParams.ignore_first_n_ticks = args.ignore_first_n_ticks
     # TODO: Is > 1 ego vehicle really required?
     SimulationParams.number_of_ego_vehicles = args.number_of_ego_vehicles
-    SimulationParams.PHASE = SimulationParams.town_map + \
-        "_" + SimulationParams.dt_string
+    SimulationParams.PHASE = SimulationParams.town_map + "_" + SimulationParams.dt_string
     SimulationParams.data_output_subfolder = os.path.join(
-        args.output_dir, SimulationParams.PHASE)
+        args.output_dir, SimulationParams.PHASE
+    )
     SimulationParams.manual_control = args.manual_control
     SimulationParams.fixed_perception = args.fixed_perception
     SimulationParams.res = args.res
@@ -69,6 +77,7 @@ def main():
     SimulationParams.end_weather = args.end_weather
     SimulationParams.duration = args.duration
 
+    # Load world
     world = client.load_world(SimulationParams.town_map)
     world = client.get_world()
 
@@ -99,19 +108,26 @@ def main():
     setupWorld(world)
     setupTrafficManager(client)
 
-        # Get all required blueprints
+    # Get all required blueprints
     blueprint_library = world.get_blueprint_library()
 
     # 全車両 blueprint を取得
-    blueprintsVehicles = blueprint_library.filter('vehicle.*')
+    all_vehicle_bps = blueprint_library.filter('vehicle.*')
 
-    # 🚫 自転車だけ除外（台数はそのまま確保される）
+    # 🚫 自転車 blueprint を ID ベースで除外
+    #   Generation 2:
+    #     BH - Crossbike           -> vehicle.bh.crossbike
+    #     Diamondback - Century    -> vehicle.diamondback.century
+    #     Gazelle - Omafiets       -> vehicle.gazelle.omafiets
+    bicycle_ids = {
+        "vehicle.bh.crossbike",
+        "vehicle.diamondback.century",
+        "vehicle.gazelle.omafiets",
+    }
+
     blueprintsVehicles = [
-        bp for bp in blueprintsVehicles
-        if not (
-            bp.has_attribute("base_type") and
-            bp.get_attribute("base_type").value == "bicycle"
-        )
+        bp for bp in all_vehicle_bps
+        if bp.id not in bicycle_ids
     ]
 
     # Spawn point & walkers blueprints
@@ -120,7 +136,6 @@ def main():
     walker_controller_bp = blueprint_library.find('controller.ai.walker')
     walkers_spawn_points = world.get_random_location_from_navigation()
     lidar_segment_bp = blueprint_library.find('sensor.lidar.ray_cast_semantic')
-
 
     participant_density = {
         'bicycle': 0,
@@ -132,7 +147,8 @@ def main():
     }
 
     w_all_actors, w_all_id = spawnWalkers(
-        client, world, blueprintsWalkers, SimulationParams.num_of_walkers)
+        client, world, blueprintsWalkers, SimulationParams.num_of_walkers
+    )
     for actor in w_all_actors:
         actor_type = actor.attributes['role_name']
         if actor_type == "pedestrian":
@@ -143,7 +159,7 @@ def main():
     fixed = []
     map_name = world.get_map().name
 
-    if SimulationParams.fixed_perception == True:
+    if SimulationParams.fixed_perception is True:
         with open(SimulationParams.fixed_perception_sensor_locations_json_filepath, 'r') as json_file:
             sensor_locations = json.load(json_file)
         SimulationParams.town_map = map_name.split("/")[-1]
@@ -151,18 +167,28 @@ def main():
             if config_entry["town"] == map_name:
                 for coordinate in config_entry["cordinates"]:
                     fixed.append(FixedPerception(
-                        SimulationParams.fixed_perception_sensor_json_filepath, None, world, args, coordinate))
+                        SimulationParams.fixed_perception_sensor_json_filepath,
+                        None,
+                        world,
+                        args,
+                        coordinate,
+                    ))
 
     for i in range(SimulationParams.number_of_ego_vehicles):
         egos.append(EgoVehicle(
-            SimulationParams.sensor_json_filepath, None, world, args))
+            SimulationParams.sensor_json_filepath, None, world, args
+        ))
 
     v_all_actors, v_all_id = spawnVehicles(
-        client, world, vehicles_spawn_points, blueprintsVehicles, SimulationParams.num_of_vehicles)
+        client,
+        world,
+        vehicles_spawn_points,
+        blueprintsVehicles,
+        SimulationParams.num_of_vehicles,
+    )
 
     for actor in v_all_actors:
         actor_type = actor.attributes.get('base_type')
-
         if actor_type in participant_density:
             participant_density[actor_type] += 1
     world.tick()
@@ -172,10 +198,12 @@ def main():
     def process_egos(i, frame_id):
         data = egos[i].getSensorData(frame_id)
         output_folder = os.path.join(
-            SimulationParams.data_output_subfolder, "ego" + str(i))
+            SimulationParams.data_output_subfolder, "ego" + str(i)
+        )
         try:
             save_sensors.saveAllSensors(
-                output_folder, data, egos[i].sensor_names, world)
+                output_folder, data, egos[i].sensor_names, world
+            )
             control = egos[i].ego.get_control()
             angle = control.steer
             save_sensors.saveSteeringAngle(angle, output_folder)
@@ -186,10 +214,12 @@ def main():
     def process_fixed(i, frame_id):
         data = fixed[i].getSensorData(frame_id)
         output_folder = os.path.join(
-            SimulationParams.data_output_subfolder, "fixed-" + str(i+1))
+            SimulationParams.data_output_subfolder, "fixed-" + str(i + 1)
+        )
         try:
             save_sensors.saveAllSensors(
-                output_folder, data, fixed[i].sensor_names, world)
+                output_folder, data, fixed[i].sensor_names, world
+            )
         except Exception as error:
             print("An exception occurred in fixed - perception saving:", error)
             traceback.print_exc()
@@ -274,32 +304,34 @@ def main():
                 frame_id = sync_mode.tick(timeout=5.0)
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    futures = [executor.submit(
-                        process_egos, i, frame_id) for i in range(len(egos))]
+                    futures = [
+                        executor.submit(process_egos, i, frame_id)
+                        for i in range(len(egos))
+                    ]
                     concurrent.futures.wait(futures)
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    futures = [executor.submit(
-                        process_fixed, i, frame_id) for i in range(len(fixed))]
+                    futures = [
+                        executor.submit(process_fixed, i, frame_id)
+                        for i in range(len(fixed))
+                    ]
                     concurrent.futures.wait(futures)
 
                 progress = step / duration
                 current_weather = interpolate_weather(
-                    start_weather, end_weather, progress)
+                    start_weather, end_weather, progress
+                )
                 world.set_weather(current_weather)
     finally:
         print("\nSimulation finished. Starting cleanup process...")
-        # この時点ではまだ同期モードが有効なはずです
 
         # 1. 歩行者のAIを停止させます
         print("Stopping walkers...")
         for i in range(0, len(w_all_actors)):
             try:
-                # アクターがまだ存在するか確認すると、より安全です
                 if w_all_actors[i].is_alive:
                     w_all_actors[i].stop()
             except Exception:
-                # すでに破棄されている場合などは何もしません
                 pass
         
         # 2. すべてのアクターを破棄するコマンドを送信します
@@ -310,17 +342,12 @@ def main():
         for ego in egos:
             ego.destroy()
 
-        # -------------------- ここからが重要な修正点 --------------------
         # 3. サーバーがアクターの破棄を完了するのを待ちます
-        #    同期モードが有効なので、tick()を呼び出してサーバーの時間を進めます
         try:
             print("Ticking world to finalize cleanup...")
-            # 念のため数回tickを呼び出し、処理を確実にします
-            for _ in range(5): 
+            for _ in range(5):
                 world.tick()
         except RuntimeError as e:
-            # シミュレーターがすでに終了処理に入っている場合にエラーになることがありますが、
-            # クリーンアップ段階では問題ないことが多いです。
             print(f"Could not tick the world during cleanup, this might be okay. Error: {e}")
 
         # 4. 最後に、安全な状態で同期モードを解除します
