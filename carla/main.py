@@ -56,6 +56,9 @@ def main():
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.timeout)
 
+    print("Connected to CARLA server.") 
+    print(args.number_of_vehicles, "vehicles will be spawned.")
+
     # Setup simulation parameters
     SimulationParams.town_map = args.map
     SimulationParams.num_of_walkers = args.number_of_walkers
