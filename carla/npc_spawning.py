@@ -23,70 +23,109 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
     }
     """
 
-    # カテゴリ別の blueprint ID リスト
-    CATEGORIES = {
+    # カテゴリ別の blueprint ID 候補
+    CATEGORIES_IDS = {
         "car": [
             "vehicle.dodge.charger_2020",
             "vehicle.dodge.charger_police_2020",
-            "vehicle.ford.crown_taxi",
+            "vehicle.ford.crown_taxi",   # ← ここが無い環境もある
             "vehicle.lincoln.mkz_2020",
             "vehicle.mercedes.coupe_2020",
             "vehicle.mini.cooper_s_2021",
-            "vehicle.nissan.patrol_2021"
+            "vehicle.nissan.patrol_2021",
         ],
         "van": [
             "vehicle.ford.ambulance",
             "vehicle.mercedes.sprinter",
-            "vehicle.volkswagen.t2_2021"
+            "vehicle.volkswagen.t2_2021",
         ],
         "truck": [
             "vehicle.carlamotors.european_hgv",
             "vehicle.carlamotors.firetruck",
-            "vehicle.tesla.cybertruck"
+            "vehicle.tesla.cybertruck",
         ],
         "motorcycle": [
             "vehicle.harley-davidson.low_rider",
             "vehicle.kawasaki.ninja",
             "vehicle.vespa.zx125",
-            "vehicle.yamaha.yzf"
+            "vehicle.yamaha.yzf",
         ],
         "bus": [
-            "vehicle.mitsubishi.fusorosa"
+            "vehicle.mitsubishi.fusorosa",
         ],
         "bicycle": [
             "vehicle.bh.crossbike",
             "vehicle.diamondback.century",
-            "vehicle.gazelle.omafiets"
+            "vehicle.gazelle.omafiets",
         ],
     }
 
-    # ---- 割合に基づきスポーン数を計算 ----------------------------------
+    # ----------------------------------------------------
+    # 1) 実際に存在する Blueprint だけにフィルタリング
+    # ----------------------------------------------------
+    CATEGORIES = {}
+    for cat, ids in CATEGORIES_IDS.items():
+        bps = []
+        for bp_id in ids:
+            try:
+                bp = blueprint_library.find(bp_id)
+            except IndexError:
+                print(f"[WARN] Blueprint '{bp_id}' not found. Skipping.")
+                continue
+            bps.append(bp)
+
+        if not bps:
+            print(f"[WARN] No valid blueprints found for category '{cat}'.")
+        CATEGORIES[cat] = bps
+
+    # ----------------------------------------------------
+    # 2) 割合から spawn_plan を作成
+    # ----------------------------------------------------
     spawn_plan = {}
     for cat, ratio in ratios.items():
         spawn_plan[cat] = int(total_num * ratio)
 
-    # 合計がズレたら修正
+    # 合計を total_num に合わせて補正
     diff = total_num - sum(spawn_plan.values())
     if diff > 0:
-        # 余ったぶんは最も比率の高いカテゴリに追加
-        max_cat = max(ratios, key=ratios.get)
-        spawn_plan[max_cat] += diff
+        # 一番比率の高いカテゴリに余りを足す（存在しないカテゴリは除外）
+        valid_ratio_items = [
+            (cat, r) for cat, r in ratios.items() if CATEGORIES.get(cat)
+        ]
+        if valid_ratio_items:
+            max_cat = max(valid_ratio_items, key=lambda x: x[1])[0]
+            spawn_plan[max_cat] += diff
 
-    print("Spawn plan =", spawn_plan)
+    print("Spawn plan (before invalid-category fix) =", spawn_plan)
 
-    # ---- batch command生成 ----------------------------------------------
+    # Blueprint が1つもないカテゴリは 0 にする
+    removed = 0
+    for cat, num in list(spawn_plan.items()):
+        if not CATEGORIES.get(cat):
+            removed += num
+            spawn_plan[cat] = 0
+
+    # もし削られたぶんがあれば、有効なカテゴリに追加
+    if removed > 0:
+        valid_cats = [c for c in spawn_plan.keys() if CATEGORIES.get(c)]
+        if valid_cats:
+            # とりあえず最初の有効カテゴリに寄せる
+            spawn_plan[valid_cats[0]] += removed
+
+    print("Spawn plan (final) =", spawn_plan)
+
+    # ----------------------------------------------------
+    # 3) batch command 生成
+    # ----------------------------------------------------
     batch = []
 
     for category, num in spawn_plan.items():
-        bp_ids = CATEGORIES[category]
-
-        if num == 0:
+        bps = CATEGORIES.get(category, [])
+        if num == 0 or not bps:
             continue
 
         for _ in range(num):
-            bp_id = random.choice(bp_ids)
-            bp = blueprint_library.find(bp_id)
-
+            bp = random.choice(bps)
             sp = random.choice(spawn_points)
             batch.append(
                 command.SpawnActor(bp, sp).then(
@@ -94,9 +133,15 @@ def spawnVehicles(client, world, spawn_points, blueprint_library, ratios, total_
                 )
             )
 
-    # ---- Spawn 実行 ------------------------------------------------------
+    # ----------------------------------------------------
+    # 4) Spawn 実行
+    # ----------------------------------------------------
+    if not batch:
+        print("[WARN] Vehicle spawn batch is empty. No vehicles will be spawned.")
+        return [], []
+
     results = client.apply_batch_sync(batch, True)
-    all_id = [results[i].actor_id for i in range(len(results))]
+    all_id = [results[i].actor_id for i in range(len(results)) if results[i].error is None]
     all_actors = world.get_actors(all_id)
     return all_actors, all_id
 
